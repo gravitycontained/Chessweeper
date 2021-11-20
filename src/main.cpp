@@ -7,11 +7,10 @@ namespace info {
 	constexpr qsf::rgb revealed_color = qsf::rgb(192, 192, 192);
 	constexpr qsf::rgb hidden_color = qsf::rgb(220, 220, 220);
 	constexpr qsf::rgb hover_color = qsf::rgb(255, 255, 255);
-	constexpr std::array<qpl::vector2i, 4> neighbour_checks = { qpl::vector2i(0, -1),qpl::vector2i(-1, 0), qpl::vector2i(1, 0), qpl::vector2i(0, 1) };
+	constexpr std::array<qpl::vector2i, 4> reveal_directions = { qpl::vector2i(0, -1), qpl::vector2i(-1, 0), qpl::vector2i(1, 0), qpl::vector2i(0, 1) };
 	constexpr auto piece_texture_width = 200u;
-	qpl::vector2u field_dim = { 24, 14 };
+	constexpr qpl::vector2u field_dim = { 24, 14 };
 	constexpr qpl::f32 texture_scale = 65;
-
 }
 
 enum class piece_type : qpl::u16 {
@@ -39,75 +38,41 @@ sf::IntRect piece_to_rect(piece_type piece) {
 	rect.height = info::piece_texture_width;
 	return rect;
 }
-struct pieces {
 
-	sf::Sprite white_king;
-	sf::Sprite white_queen;
-	sf::Sprite white_bishop;
-	sf::Sprite white_horse;
-	sf::Sprite white_rook;
-	sf::Sprite white_pawn;
-	sf::Sprite black_king;
-	sf::Sprite black_queen;
-	sf::Sprite black_bishop;
-	sf::Sprite black_horse;
-	sf::Sprite black_rook;
-	sf::Sprite black_pawn;
+struct pieces {
+	std::array<qsf::sprite, 12> sprites;
+
+	qsf::sprite& get_sprite(piece_type type) {
+		return this->sprites[qpl::size_cast(type) - 1];
+	}
+	const qsf::sprite& get_sprite(piece_type type) const {
+		return this->sprites[qpl::size_cast(type) - 1];
+	}
 
 	void set_scale() {
 		auto factor = info::texture_scale / info::piece_texture_width;
-		this->white_king.setScale(factor, factor);
-		this->white_queen.setScale(factor, factor);
-		this->white_bishop.setScale(factor, factor);
-		this->white_horse.setScale(factor, factor);
-		this->white_rook.setScale(factor, factor);
-		this->white_pawn.setScale(factor, factor);
-		this->black_king.setScale(factor, factor);
-		this->black_queen.setScale(factor, factor);
-		this->black_bishop.setScale(factor, factor);
-		this->black_horse.setScale(factor, factor);
-		this->black_rook.setScale(factor, factor);
-		this->black_pawn.setScale(factor, factor);
+		for (auto& i : this->sprites) {
+			i.set_scale(factor);
+		}
 	}
 	void create(const sf::Texture& texture) {
-		this->white_king.setTexture(texture);
-		this->white_queen.setTexture(texture);
-		this->white_bishop.setTexture(texture);
-		this->white_horse.setTexture(texture);
-		this->white_rook.setTexture(texture);
-		this->white_pawn.setTexture(texture);
-		this->black_king.setTexture(texture);
-		this->black_queen.setTexture(texture);
-		this->black_bishop.setTexture(texture);
-		this->black_horse.setTexture(texture);
-		this->black_rook.setTexture(texture);
-		this->black_pawn.setTexture(texture);
-
-		this->white_king.setTextureRect(piece_to_rect(piece_type::white_king));
-		this->white_queen.setTextureRect(piece_to_rect(piece_type::white_queen));
-		this->white_bishop.setTextureRect(piece_to_rect(piece_type::white_bishop));
-		this->white_horse.setTextureRect(piece_to_rect(piece_type::white_horse));
-		this->white_rook.setTextureRect(piece_to_rect(piece_type::white_rook));
-		this->white_pawn.setTextureRect(piece_to_rect(piece_type::white_pawn));
-		this->black_king.setTextureRect(piece_to_rect(piece_type::black_king));
-		this->black_queen.setTextureRect(piece_to_rect(piece_type::black_queen));
-		this->black_bishop.setTextureRect(piece_to_rect(piece_type::black_bishop));
-		this->black_horse.setTextureRect(piece_to_rect(piece_type::black_horse));
-		this->black_rook.setTextureRect(piece_to_rect(piece_type::black_rook));
-		this->black_pawn.setTextureRect(piece_to_rect(piece_type::black_pawn));
-
+		qpl::u32 ctr = 0u;
+		for (auto& i : this->sprites) {
+			i.set_texture(texture);
+			i.set_texture_rect(piece_to_rect(static_cast<piece_type>(++ctr)));
+		}
 		this->set_scale();
 	}
 };
 
 struct square {
-	bool has_mine = false;
+	bool has_queen = false;
 	bool is_revealed = false;
 	bool is_hovering = false;
 	bool checked = false;
 	bool has_flag = false;
 	qpl::u32 flag_sprite_index = 0u;
-	qpl::u32 mine_neighbours = 0u;
+	qpl::u32 neighbours = 0u;
 	qpl::animation fade_animation;
 	square() {
 		this->fade_animation.set_duration(0.2);
@@ -118,12 +83,13 @@ struct field {
 	std::vector<square> squares;
 	qpl::vector2f position = { info::square_width, info::square_width };
 	qpl::vector2u field_dim;
-	pieces pieces;
 	sf::Texture flag_texture;
-	qpl::size mine_spawn_count = 0;
+	qpl::size queen_spawn_count = 0;
 	bool mines_generated = false;
+	pieces pieces;
 
-	void create(qpl::vector2u dim) {
+	void create(const sf::Texture& texture, qpl::vector2u dim) {
+		this->pieces.create(texture);
 		this->field_dim = dim;
 		this->squares.resize(dim.x * dim.y);
 		this->rects.resize(dim.x * dim.y);
@@ -145,9 +111,8 @@ struct field {
 			auto pos = qpl::vec(x + 0.5, y + 0.5) * info::square_width + this->position;
 			this->rects[i].set_dimension(qpl::vec(info::square_width, info::square_width) - info::square_decrease);
 			this->rects[i].set_center(pos);
-			this->pawn_sprites[i] = this->pieces.white_pawn;
+			this->pawn_sprites[i] = this->pieces.get_sprite(piece_type::white_pawn);
 			this->pawn_sprites[i].set_center(this->rects[i].get_center());
-			//this->pawn_sprites[i].set_color(qsf::rgb::white.with_alpha(100));
 		}
 	}
 
@@ -180,30 +145,29 @@ struct field {
 		qpl::i32 y = i / this->field_dim.x;
 
 
-		if (recursive && !square.mine_neighbours) {
+		if (recursive && !square.neighbours) {
 			for (qpl::i32 iy = -1; iy <= 1; ++iy) {
 				for (qpl::i32 ix = -1; ix <= 1; ++ix) {
 					auto dx = x + ix;
 					auto dy = y + iy;
 
-					bool is_neighbour_check = false;
-					for (auto& i : info::neighbour_checks) {
+					bool is_next_to_me = false;
+					for (auto& i : info::reveal_directions) {
 						if (i == qpl::vector2u(ix, iy)) {
-							is_neighbour_check = true;
+							is_next_to_me = true;
+							break;
 						}
 					}
 					if (dx >= 0 && dx < this->field_dim.x && dy >= 0 && dy < this->field_dim.y) {
 						auto index = dx + this->field_dim.x * dy;
 
-						if (is_neighbour_check) {
-							if (!this->squares[index].checked && !this->squares[index].has_mine && !this->squares[index].has_flag) {
-								reveal_square(index);
+						if (!this->squares[index].checked && is_next_to_me) {
+							if (!this->squares[index].has_queen && !this->squares[index].has_flag) {
+								this->reveal_square(index);
 							}
 						}
-						else {
-							if (!this->squares[index].checked && this->squares[index].mine_neighbours) {
-								reveal_square(index);
-							}
+						else if (this->squares[index].neighbours) {
+							this->reveal_square(index);
 						}
 					}
 				}
@@ -211,7 +175,7 @@ struct field {
 		}
 
 		this->pawn_sprites[i].set_color(qsf::rgb::transparent);
-		if (square.has_mine) {
+		if (square.has_queen) {
 			rect.set_color(qsf::rgb::red);
 		}
 		else {
@@ -222,15 +186,15 @@ struct field {
 			this->flag_sprites[square.flag_sprite_index].set_color(qsf::rgb::transparent);
 		}
 
-		if (square.mine_neighbours) {
+		if (square.neighbours) {
 			this->texts.push_back({});
 			auto& text = this->texts.back();
 			text.set_font("sweeper");
 			text.set_character_size(38);
-			text.set_string(qpl::to_string(square.mine_neighbours));
+			text.set_string(qpl::to_string(square.neighbours));
 			text.set_center(rect.get_center());
 
-			switch (square.mine_neighbours) {
+			switch (square.neighbours) {
 			case 1u: text.set_color(qsf::rgb(2, 20, 253)); break;
 			case 2u: text.set_color(qsf::rgb(1, 126, 20)); break;
 			case 3u: text.set_color(qsf::rgb(254, 0, 0)); break;
@@ -241,10 +205,10 @@ struct field {
 			case 8u: text.set_color(qsf::rgb(128, 128, 128)); break;
 			}
 		}
-		if (square.has_mine) {
+		if (square.has_queen) {
 			this->black_queen_sprites.push_back({});
 			auto& sprite = this->black_queen_sprites.back();
-			sprite = this->pieces.black_queen;
+			sprite = this->pieces.get_sprite(piece_type::black_queen);
 			sprite.set_center(rect.get_center());
 		}
 
@@ -269,7 +233,7 @@ struct field {
 						i.checked = false;
 					}
 					this->reveal_square(i);
-					if (square.has_mine) {
+					if (square.has_queen) {
 						this->reveal_all();
 					}
 					continue;
@@ -307,7 +271,7 @@ struct field {
 	}
 	void add_mines(qpl::u32 index) {
 		this->mines_generated = true;
-		auto count = this->mine_spawn_count;
+		auto count = this->queen_spawn_count;
 
 		{
 			qpl::i32 x = index % this->field_dim.x;
@@ -321,8 +285,8 @@ struct field {
 					continue;
 				}
 
-				if (!this->squares[random].has_mine) {
-					this->squares[random].has_mine = true;
+				if (!this->squares[random].has_queen) {
+					this->squares[random].has_queen = true;
 					--count;
 				}
 			}
@@ -332,7 +296,7 @@ struct field {
 			qpl::i32 x = i % this->field_dim.x;
 			qpl::i32 y = i / this->field_dim.x;
 
-			if (!this->squares[i].has_mine) {
+			if (!this->squares[i].has_queen) {
 				qpl::u32 count = 0u;
 				for (qpl::i32 iy = -1; iy <= 1; ++iy) {
 					for (qpl::i32 ix = -1; ix <= 1; ++ix) {
@@ -341,13 +305,13 @@ struct field {
 						if (dx >= 0 && dx < this->field_dim.x && dy >= 0 && dy < this->field_dim.y) {
 							auto index = dx + this->field_dim.x * dy;
 
-							if (this->squares[index].has_mine) {
+							if (this->squares[index].has_queen) {
 								++count;
 							}
 						}
 					}
 				}
-				this->squares[i].mine_neighbours = count;
+				this->squares[i].neighbours = count;
 			}
 		}
 	}
@@ -374,9 +338,8 @@ struct main_state : qsf::base_state {
 		this->get_texture("pieces").setSmooth(true);
 
 		qsf::load_texture(this->field.flag_texture, "resources/flag.png");
-		this->field.pieces.create(this->get_texture("pieces"));
-		this->field.create(info::field_dim);
-		this->field.mine_spawn_count = 80;
+		this->field.create(this->get_texture("pieces"), info::field_dim);
+		this->field.queen_spawn_count = 80;
 		this->clear_color = qsf::rgb(128, 128, 128);
 
 	}
