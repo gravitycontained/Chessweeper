@@ -9,4 +9,4 @@ For Visual Studio, If you setup a fresh project and setup the library, copy the 
 If expanded it probably should have a mode to set the difficulty and board size.
 
 other ideas from reddit:
-- put the checkmate sign on the triggered mine
+- put the checkmate sign on the triggered mine (by u/afonsoel)
